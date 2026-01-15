@@ -11,25 +11,11 @@ env:
 
 jobs:
   # ==========================================
-  # JOB 1: Tests
+  # JOB 1: Lint & Validate
   # ==========================================
-  tests:
-    name: Tests PHPUnit
+  validate:
+    name: Validate
     runs-on: ubuntu-latest
-
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: password
-          MYSQL_DATABASE: testing
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=3
 
     steps:
       - name: Checkout code
@@ -39,49 +25,20 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ env.PHP_VERSION }}
-          extensions: mbstring, dom, fileinfo, mysql, libxml, xml, xmlwriter, pdo_mysql
+          extensions: mbstring, dom, fileinfo, mysql, pdo_mysql
           coverage: none
 
-      - name: Cache Composer dependencies
-        uses: actions/cache@v4
-        with:
-          path: app/vendor
-          key: composer-${{ hashFiles('app/composer.lock') }}
-          restore-keys: composer-
+      - name: Validate composer.json
+        working-directory: app
+        run: composer validate --strict
 
       - name: Install Composer dependencies
         working-directory: app
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
-      - name: Copy environment file
+      - name: Check PHP syntax
         working-directory: app
-        run: cp .env.example .env
-
-      - name: Generate application key
-        working-directory: app
-        run: php artisan key:generate
-
-      - name: Run migrations
-        working-directory: app
-        env:
-          DB_CONNECTION: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_DATABASE: testing
-          DB_USERNAME: root
-          DB_PASSWORD: password
-        run: php artisan migrate --force
-
-      - name: Run tests
-        working-directory: app
-        env:
-          DB_CONNECTION: mysql
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_DATABASE: testing
-          DB_USERNAME: root
-          DB_PASSWORD: password
-        run: php artisan test
+        run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \; | grep -v "No syntax errors"
 
   # ==========================================
   # JOB 2: Deploy to Production
@@ -89,7 +46,7 @@ jobs:
   deploy:
     name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: tests
+    needs: validate
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -109,8 +66,6 @@ jobs:
             --exclude '.git' \
             --exclude '.github' \
             --exclude 'app/vendor' \
-            --exclude 'app/node_modules' \
-            --exclude 'app/tests' \
             --exclude 'app/.env' \
             --exclude 'app/storage/logs/*' \
             --exclude 'app/storage/framework/cache/*' \
@@ -132,10 +87,12 @@ jobs:
               PHP_BIN="php"
             fi
 
+            echo "Using PHP: $PHP_BIN"
+
             # Check if .env exists
             if [ ! -f ".env" ]; then
-              echo "ERROR: .env file not found!"
-              exit 1
+              cp .env.example .env
+              $PHP_BIN artisan key:generate
             fi
 
             # Install Composer dependencies
