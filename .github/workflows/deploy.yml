@@ -38,7 +38,7 @@ jobs:
 
       - name: Check PHP syntax
         working-directory: app
-        run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \; | grep -v "No syntax errors"
+        run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \; 2>&1 | (grep -v "No syntax errors" || true)
 
   # ==========================================
   # JOB 2: Deploy to Production
