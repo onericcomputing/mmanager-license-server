@@ -1,0 +1,160 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+env:
+  PHP_VERSION: '8.4'
+
+jobs:
+  # ==========================================
+  # JOB 1: Tests
+  # ==========================================
+  tests:
+    name: Tests PHPUnit
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: password
+          MYSQL_DATABASE: testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: mbstring, dom, fileinfo, mysql, libxml, xml, xmlwriter, pdo_mysql
+          coverage: none
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: app/vendor
+          key: composer-${{ hashFiles('app/composer.lock') }}
+          restore-keys: composer-
+
+      - name: Install Composer dependencies
+        working-directory: app
+        run: composer install --no-interaction --prefer-dist --optimize-autoloader
+
+      - name: Copy environment file
+        working-directory: app
+        run: cp .env.example .env
+
+      - name: Generate application key
+        working-directory: app
+        run: php artisan key:generate
+
+      - name: Run migrations
+        working-directory: app
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+        run: php artisan migrate --force
+
+      - name: Run tests
+        working-directory: app
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: testing
+          DB_USERNAME: root
+          DB_PASSWORD: password
+        run: php artisan test
+
+  # ==========================================
+  # JOB 2: Deploy to Production
+  # ==========================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: tests
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.SERVER_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to server
+        run: |
+          rsync -avz --delete \
+            --exclude '.git' \
+            --exclude '.github' \
+            --exclude 'app/vendor' \
+            --exclude 'app/node_modules' \
+            --exclude 'app/tests' \
+            --exclude 'app/.env' \
+            --exclude 'app/storage/logs/*' \
+            --exclude 'app/storage/framework/cache/*' \
+            --exclude 'app/storage/framework/sessions/*' \
+            --exclude 'app/storage/framework/views/*' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}
+
+      - name: Run post-deployment commands
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.SSH_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
+            cd ${{ secrets.DEPLOY_PATH }}/app
+
+            # Use PHP 8.4 if available
+            if [ -x "/usr/bin/php8.4" ]; then
+              PHP_BIN="/usr/bin/php8.4"
+            else
+              PHP_BIN="php"
+            fi
+
+            # Check if .env exists
+            if [ ! -f ".env" ]; then
+              echo "ERROR: .env file not found!"
+              exit 1
+            fi
+
+            # Install Composer dependencies
+            $PHP_BIN /usr/local/bin/composer install --no-interaction --prefer-dist --optimize-autoloader --no-dev
+
+            # Run migrations
+            $PHP_BIN artisan migrate --force
+
+            # Clear and rebuild caches
+            $PHP_BIN artisan config:cache
+            $PHP_BIN artisan route:cache
+            $PHP_BIN artisan view:cache
+
+            # Set permissions
+            chmod -R 775 storage bootstrap/cache
+
+            echo "Deployment completed successfully!"
+          ENDSSH
+
+      - name: Deployment notification
+        if: success()
+        run: echo "License server deployed successfully!"

@@ -1,0 +1,65 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: license-server
+    restart: unless-stopped
+    working_dir: /var/www
+    volumes:
+      - ./app:/var/www
+    environment:
+      - APP_ENV=local
+      - APP_DEBUG=true
+      - APP_KEY=base64:sEtVuSkpPrs/ORckBxPLYfYdl6HJgCVkv7g7jeFJOrE=
+      - DB_CONNECTION=mysql
+      - DB_HOST=db
+      - DB_PORT=3306
+      - DB_DATABASE=license_server
+      - DB_USERNAME=license
+      - DB_PASSWORD=secret
+      - ADMIN_EMAIL=admin@mmanager.fr
+      - ADMIN_PASSWORD=admin123
+      - ENVATO_PERSONAL_TOKEN=
+      - ENVATO_ITEM_ID=
+    networks:
+      - license-network
+    depends_on:
+      - db
+
+  nginx:
+    image: nginx:alpine
+    container_name: license-nginx
+    restart: unless-stopped
+    ports:
+      - "8881:80"
+    volumes:
+      - ./app:/var/www
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - license-network
+    depends_on:
+      - app
+
+  db:
+    image: mysql:8.0
+    container_name: license-db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: license_server
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_USER: license
+      MYSQL_PASSWORD: secret
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - license-network
+    ports:
+      - "3308:3306"
+
+networks:
+  license-network:
+    driver: bridge
+
+volumes:
+  db-data:
