@@ -101,7 +101,13 @@ jobs:
             # Run migrations
             $PHP_BIN artisan migrate --force
 
-            # Clear and rebuild caches
+            # Clear all caches first
+            $PHP_BIN artisan cache:clear
+            $PHP_BIN artisan config:clear
+            $PHP_BIN artisan route:clear
+            $PHP_BIN artisan view:clear
+
+            # Rebuild caches for production
             $PHP_BIN artisan config:cache
             $PHP_BIN artisan route:cache
             $PHP_BIN artisan view:cache
