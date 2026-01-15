@@ -29,15 +29,12 @@ jobs:
           coverage: none
 
       - name: Validate composer.json
-        working-directory: app
         run: composer validate
 
       - name: Install Composer dependencies
-        working-directory: app
         run: composer install --no-interaction --prefer-dist --optimize-autoloader
 
       - name: Check PHP syntax
-        working-directory: app
         run: find . -name "*.php" -not -path "./vendor/*" -exec php -l {} \; 2>&1 | (grep -v "No syntax errors" || true)
 
   # ==========================================
@@ -65,12 +62,15 @@ jobs:
           rsync -avz --delete \
             --exclude '.git' \
             --exclude '.github' \
-            --exclude 'app/vendor' \
-            --exclude 'app/.env' \
-            --exclude 'app/storage/logs/*' \
-            --exclude 'app/storage/framework/cache/*' \
-            --exclude 'app/storage/framework/sessions/*' \
-            --exclude 'app/storage/framework/views/*' \
+            --exclude 'vendor' \
+            --exclude '.env' \
+            --exclude 'storage/logs/*' \
+            --exclude 'storage/framework/cache/*' \
+            --exclude 'storage/framework/sessions/*' \
+            --exclude 'storage/framework/views/*' \
+            --exclude 'docker-compose.yml' \
+            --exclude 'Dockerfile' \
+            --exclude 'nginx' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.SSH_USER }}@${{ secrets.SERVER_HOST }}:${{ secrets.DEPLOY_PATH }}
 
@@ -78,7 +78,7 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.SSH_USER }}@${{ secrets.SERVER_HOST }} << 'ENDSSH'
-            cd ${{ secrets.DEPLOY_PATH }}/app
+            cd ${{ secrets.DEPLOY_PATH }}
 
             # Use PHP 8.4 if available
             if [ -x "/usr/bin/php8.4" ]; then
