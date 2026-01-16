@@ -89,6 +89,10 @@ jobs:
 
             echo "Using PHP: $PHP_BIN"
 
+            # Clean up old structure remnants (from previous nested app/ deployment)
+            rm -rf app/vendor app/storage app/.env 2>/dev/null || true
+            rm -f bootstrap/cache/*.php 2>/dev/null || true
+
             # Check if .env exists
             if [ ! -f ".env" ]; then
               cp .env.example .env
