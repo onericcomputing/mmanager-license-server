@@ -105,8 +105,8 @@ jobs:
             # Run migrations
             $PHP_BIN artisan migrate --force
 
-            # Clear all caches first
-            $PHP_BIN artisan cache:clear
+            # Clear all caches first (cache:clear may fail if DB not ready, ignore error)
+            $PHP_BIN artisan cache:clear 2>/dev/null || true
             $PHP_BIN artisan config:clear
             $PHP_BIN artisan route:clear
             $PHP_BIN artisan view:clear
